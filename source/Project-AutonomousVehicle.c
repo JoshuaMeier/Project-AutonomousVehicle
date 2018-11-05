@@ -55,7 +55,7 @@ int main(void) {
   	/* Init FSL debug console. */
     BOARD_InitDebugConsole();
 
-    PRINTF("Hello World PT2\n");
+    PRINTF("Hello World PT3\n");
 
     /* Force the counter to be placed into memory. */
     volatile static int i = 0 ;

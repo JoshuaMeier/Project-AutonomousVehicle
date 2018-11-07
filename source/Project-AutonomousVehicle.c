@@ -52,7 +52,7 @@ void Print2LCD();
 SemaphoreHandle_t semMotors;
 
 int CnV0 = 1400;
-int CnV1 = 1400;
+int CnV1 = 2000;
 
 void vMoveForward(void*pv) {
 
@@ -82,8 +82,12 @@ void vMoveForward(void*pv) {
 
     PORTE->PCR[23] &= ~PORT_PCR_MUX_MASK;
     PORTE->PCR[23] |= PORT_PCR_MUX(3);
-    while(1) {	taskYIELD();	}
+    while(1) {
+    	//TPM2->CONTROLS[0].CnV=CnV0;
+    	//TPM2->CONTROLS[1].CnV=CnV1;
 
+    	//taskYIELD();
+    }
 }
 
 void vApplicationIdleHook(void) {
@@ -102,7 +106,6 @@ int main(void) {
   	/* Init FSL debug console. */
     BOARD_InitDebugConsole();
 
-    PRINTF("Hello World PT6\n");
 
     semMotors = xSemaphoreCreateBinary();
     __enable_irq();

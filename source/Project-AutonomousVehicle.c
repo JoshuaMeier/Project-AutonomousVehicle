@@ -80,8 +80,8 @@ void vMoveForward(void*pv) {
     TPM2->CONTROLS[1].CnV=CnV1;
 
 
-    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[22] |= PORT_PCR_MUX(3);
+    PORTE->PCR[21] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[21] |= PORT_PCR_MUX(3);
 
     PORTE->PCR[23] &= ~PORT_PCR_MUX_MASK;
     PORTE->PCR[23] |= PORT_PCR_MUX(3);
@@ -140,9 +140,6 @@ void ADC0_IRQHandler(void){
 	portYIELD_FROM_ISR(woken);
 }
 
-void vApplicationIdleHook(void) {
-	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
-}
 
 int main(void) {
   	/* Init board hardware. */
@@ -157,7 +154,7 @@ int main(void) {
     __enable_irq();
   
     xTaskCreate(vTaskConverter, "TASK A", 300,0,0,NULL);
-    xTaskCreate(vMoveForward, "Move Forward", 300, 1, 0, NULL);
+    xTaskCreate(vMoveForward, "Move Forward", 300, 0, 0, NULL);
     vTaskStartScheduler();
 
     /* Enter an infinite loop, just incrementing a counter. */  

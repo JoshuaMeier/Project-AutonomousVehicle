@@ -39,16 +39,63 @@
 #include "clock_config.h"
 #include "MKL43Z4.h"
 #include "fsl_debug_console.h"
+
 /* TODO: insert other include files here. */
-#include"FreeRTOS.h"	// RTOS header file
-#include"task.h"		// RTOS task header file
-#include"semphr.h"		// RTOS semaphore header file
-#include"fsl_slcd.h"
+#include "FreeRTOS.h"	// RTOS header file
+#include "task.h"		// RTOS task header file
+#include "semphr.h"		// RTOS semaphore header file
+#include "fsl_slcd.h" 	// LCD header file
 
 void Print2LCD();
 
 SemaphoreHandle_t SemSensorReader;
 /* TODO: insert other definitions and declarations here. */
+void Print2LCD();
+
+SemaphoreHandle_t semMotors;
+
+int CnV0 = 1400;
+int CnV1 = 2000;
+
+void vMoveForward(void*pv) {
+
+	//xSemaphoreTake(semMotors, portMAX_DELAY);
+
+    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+    SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK;
+
+    SIM->SOPT2 &= SIM_SOPT2_TPMSRC_MASK;
+    // Options: 00 Clock disabled; 01 IRC48M; 10 OSCERCLK; 11 MCGIRCLK
+    MCG->C1 |= MCG_C1_IRCLKEN_MASK; SIM->SOPT2 |= SIM_SOPT2_TPMSRC(0b11);
+    TPM2->CONF |= TPM_CONF_DBGMODE(0b11); // allow the timer to run in debug mode
+
+    TPM2->MOD = 18181; // the timer counter will count from 0 to period
+    TPM2->SC = TPM_SC_CMOD(1) | TPM_SC_PS(3);
+    TPM2->CONTROLS[0].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
+    TPM2->CONTROLS[0].CnV=CnV0;
+
+    TPM2->MOD = 18181; // the timer counter will count from 0 to period
+    TPM2->SC = TPM_SC_CMOD(1) | TPM_SC_PS(3);
+    TPM2->CONTROLS[1].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
+    TPM2->CONTROLS[1].CnV=CnV1;
+
+
+    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[22] |= PORT_PCR_MUX(3);
+
+    PORTE->PCR[23] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[23] |= PORT_PCR_MUX(3);
+    while(1) {
+    	//TPM2->CONTROLS[0].CnV=CnV0;
+    	//TPM2->CONTROLS[1].CnV=CnV1;
+
+    	taskYIELD();
+    }
+}
+
+void vApplicationIdleHook(void) {
+	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
+}
 
 /*
  * @brief   Application entry point.
@@ -106,12 +153,14 @@ int main(void) {
     BOARD_InitDebugConsole();
 
     SemSensorReader = xSemaphoreCreateBinary();
-
+    semMotors = xSemaphoreCreateBinary();
     __enable_irq();
-
+  
     xTaskCreate(vTaskConverter, "TASK A", 300,0,0,NULL);
-    vTaskStartScheduler();	//returns only if the scheduler cannot start
+    xTaskCreate(vMoveForward, "Move Forward", 300, 1, 0, NULL);
+    vTaskStartScheduler();
 
-    while(1) {	}
-    return 0 ;
+    /* Enter an infinite loop, just incrementing a counter. */  
+    while(1) {	}  
+  return 0 ;
 }

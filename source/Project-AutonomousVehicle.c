@@ -102,7 +102,7 @@ int main(void) {
   	/* Init FSL debug console. */
     BOARD_InitDebugConsole();
 
-    PRINTF("Hello World PT5\n");
+    PRINTF("Hello World PT6\n");
 
     semMotors = xSemaphoreCreateBinary();
     __enable_irq();

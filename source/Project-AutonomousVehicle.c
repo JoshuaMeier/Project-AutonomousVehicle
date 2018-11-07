@@ -86,7 +86,7 @@ void vMoveForward(void*pv) {
     	//TPM2->CONTROLS[0].CnV=CnV0;
     	//TPM2->CONTROLS[1].CnV=CnV1;
 
-    	//taskYIELD();
+    	taskYIELD();
     }
 }
 

@@ -153,7 +153,7 @@ int main(void) {
     semMotors = xSemaphoreCreateBinary();
     __enable_irq();
   
-    xTaskCreate(vTaskConverter, "TASK A", 300,0,0,NULL);
+    xTaskCreate(vTaskConverter, "Task Converter", 300,0,0,NULL);
     xTaskCreate(vMoveForward, "Move Forward", 300, 0, 0, NULL);
     vTaskStartScheduler();
 

@@ -1,33 +1,3 @@
-/*
- * Copyright 2016-2018 NXP Semiconductor, Inc.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * o Redistributions of source code must retain the above copyright notice, this list
- *   of conditions and the following disclaimer.
- *
- * o Redistributions in binary form must reproduce the above copyright notice, this
- *   list of conditions and the following disclaimer in the documentation and/or
- *   other materials provided with the distribution.
- *
- * o Neither the name of NXP Semiconductor, Inc. nor the names of its
- *   contributors may be used to endorse or promote products derived from this
- *   software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
- 
 /**
  * @file    Project-AutonomousVehicle.c
  * @brief   Application entry point.
@@ -46,23 +16,31 @@
 #include "semphr.h"		// RTOS semaphore header file
 #include "fsl_slcd.h" 	// LCD header file
 
-void Print2LCD();
 
-SemaphoreHandle_t SemSensorReader;
 /* TODO: insert other definitions and declarations here. */
 void Print2LCD();
-
+SemaphoreHandle_t SemSensorReader;
 SemaphoreHandle_t semMotors;
 
 int CnV0 = 1400;
 int CnV1 = 2000;
 
-void vMoveForward(void*pv) {
+void stopMovement(void);
+void rightMovment(void);
+void leftMovment(void);
+void forwardMovment(void);
+
+/* This task initializes the TPM as well as calls the functions for the different movement styles
+ * forwardMovement = move the left motors counter clockwise and the right motor clockwise at the same rate.
+ * leftMovment = move the 2 motors clockwise at the same rate
+ * rightMovement = move the 2 motors counter clockwise at the same rate
+ * */
+void vMovement(void*pv) {
 
 	//xSemaphoreTake(semMotors, portMAX_DELAY);
 
     SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
-    SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK;
+    SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK | SIM_SCGC6_TPM0_MASK;
 
     SIM->SOPT2 &= SIM_SOPT2_TPMSRC_MASK;
     // Options: 00 Clock disabled; 01 IRC48M; 10 OSCERCLK; 11 MCGIRCLK
@@ -72,27 +50,56 @@ void vMoveForward(void*pv) {
     TPM2->MOD = 18181; // the timer counter will count from 0 to period
     TPM2->SC = TPM_SC_CMOD(1) | TPM_SC_PS(3);
     TPM2->CONTROLS[0].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
-    TPM2->CONTROLS[0].CnV=CnV0;
 
-    TPM2->MOD = 18181; // the timer counter will count from 0 to period
-    TPM2->SC = TPM_SC_CMOD(1) | TPM_SC_PS(3);
-    TPM2->CONTROLS[1].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
-    TPM2->CONTROLS[1].CnV=CnV1;
+    TPM0->MOD = 18181; // the timer counter will count from 0 to period
+    TPM0->SC = TPM_SC_CMOD(1) | TPM_SC_PS(3);
+    TPM0->CONTROLS[3].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
 
 
-    PORTE->PCR[21] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[21] |= PORT_PCR_MUX(3);
+    PORTE->PCR[30] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[30] |= PORT_PCR_MUX(3);
 
-    PORTE->PCR[23] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[23] |= PORT_PCR_MUX(3);
+    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[22] |= PORT_PCR_MUX(3);
     while(1) {
-    	//TPM2->CONTROLS[0].CnV=CnV0;
-    	//TPM2->CONTROLS[1].CnV=CnV1;
-
+		/* sensor1 is blocked within a certain voltage */
+		if(((ADC0->R[0] * 3123)/65536) < 1000) {
+			stopMovement();
+	    	/* sensor1 and sensor2 are within a certain voltage */
+	    	if(0) {
+	    		// turn left
+	    		leftMovment();
+	    	/* sensor1 is within a certain voltage and sensor2 is not */
+	    	} else if(0) {
+	    		// turn right
+	    		rightMovment();
+	    	}
+		} else {
+			// move forward
+			forwardMovment();
+		}
     	taskYIELD();
     }
 }
 
+void forwardMovment(void) {
+    TPM2->CONTROLS[0].CnV=600;
+    TPM0->CONTROLS[3].CnV=1400;
+}
+
+void leftMovment(void) {
+    TPM2->CONTROLS[0].CnV=1400;
+    TPM0->CONTROLS[3].CnV=1400;
+}
+
+void rightMovment(void) {
+    TPM2->CONTROLS[0].CnV=600;
+    TPM0->CONTROLS[3].CnV=600;
+}
+void stopMovement(void) {
+	TPM2->CONTROLS[0].CnV=1200;
+	TPM0->CONTROLS[3].CnV=1200;
+}
 void vApplicationIdleHook(void) {
 	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
 }
@@ -154,7 +161,7 @@ int main(void) {
     __enable_irq();
   
     xTaskCreate(vTaskConverter, "Task Converter", 300,0,0,NULL);
-    xTaskCreate(vMoveForward, "Move Forward", 300, 0, 0, NULL);
+    xTaskCreate(vMovement, "Move Forward", 300, 0, 0, NULL);
     vTaskStartScheduler();
 
     /* Enter an infinite loop, just incrementing a counter. */  

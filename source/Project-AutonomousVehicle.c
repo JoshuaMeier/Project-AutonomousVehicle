@@ -135,25 +135,39 @@ void vTaskConverter(void *pv){
     	double dataChanel1[5];
     	double dataChanel2[5];
 
-    	for(int i = 0; i < 5; i++) {
-    	    ADC0->SC2 = 1; // select correct voltage reference
-    	    ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
-    	    ADC0->CFG2 = ADC_CFG2_MUXSEL(0);
+    	for(int i=0; i<5; i++){
 
-    		ADC0->SC1[0] = ADC_SC1_AIEN_MASK | ADC_SC1_ADCH(0b11); // enable ADC interrupt and request conversion on specified channel
+    	    			//Sensor #1 initialization
+    	    			ADC0->SC2 = 1; // select correct voltage reference
+    	    			ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    	    			ADC0->CFG2= ADC_CFG2_MUXSEL(0);
 
-        	int intdata1 = (ADC0->R[0] * 3123)/65536;
+    	    			//Sensor #1
+    	    		    ADC0->SC1[0] = ADC_SC1_ADCH(0b111); // conversion on specified channel
+
+    	    		    int data1 = (ADC0->R[0] * 3123)/65536;
+
+    	    		    PRINTF("V1 = %d\n",data1);
+
+    	    		    dataChanel1[i] =(ADC0->R[0] * 3123)/65536;
 
 
+    	    		    //Sensor #2 initialization
 
-    	}
+    	    		    ADC0->SC2 = 1; // select correct voltage reference
+    	    		    ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    	    		    ADC0->CFG2= ADC_CFG2_MUXSEL(1);
+
+    	    		    //Sensor #2
+    	    		    ADC0->SC1[0] = ADC_SC1_ADCH(0b100);
+
+    	    		    dataChanel2[i] =(ADC0->R[0] * 3123)/65536;
+
+
+    	    			}
     	//Takes the semaphore
     	xSemaphoreTake(SemSensorReader, portMAX_DELAY);
 
-
-    	char txt1[5];
-    	snprintf(txt1, 5, "%4d", VoADC);
-    	Print2LCD(txt1);
 
     	vTaskDelay( pdMS_TO_TICKS(200) );
     }

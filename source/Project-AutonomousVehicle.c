@@ -25,10 +25,15 @@ SemaphoreHandle_t semMotors;
 int CnV0 = 1400;
 int CnV1 = 2000;
 
+double sensor1Input = 0.0;
+double sensor2Input = 0.0;
+
+
 void stopMovement(void);
 void rightMovment(void);
 void leftMovment(void);
 void forwardMovment(void);
+
 
 /* This task initializes the TPM as well as calls the functions for the different movement styles
  * forwardMovement = move the left motors counter clockwise and the right motor clockwise at the same rate.
@@ -41,6 +46,12 @@ void vMovement(void*pv) {
 
     SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
     SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK | SIM_SCGC6_TPM0_MASK;
+
+    PORTE->PCR[30] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[30] |= PORT_PCR_MUX(3);
+
+    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[22] |= PORT_PCR_MUX(3);
 
     SIM->SOPT2 &= SIM_SOPT2_TPMSRC_MASK;
     // Options: 00 Clock disabled; 01 IRC48M; 10 OSCERCLK; 11 MCGIRCLK
@@ -56,14 +67,9 @@ void vMovement(void*pv) {
     TPM0->CONTROLS[3].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
 
 
-    PORTE->PCR[30] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[30] |= PORT_PCR_MUX(3);
-
-    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[22] |= PORT_PCR_MUX(3);
     while(1) {
 		/* sensor1 is blocked within a certain voltage */
-		if(((ADC0->R[0] * 3123)/65536) < 1000) {
+		if(getVotlage() < 1000.0) {
 			stopMovement();
 	    	/* sensor1 and sensor2 are within a certain voltage */
 	    	if(0) {
@@ -83,8 +89,8 @@ void vMovement(void*pv) {
 }
 
 void forwardMovment(void) {
-    TPM2->CONTROLS[0].CnV=600;
-    TPM0->CONTROLS[3].CnV=1400;
+    TPM2->CONTROLS[0].CnV=1200;
+    TPM0->CONTROLS[3].CnV=1900;
 }
 
 void leftMovment(void) {
@@ -97,8 +103,8 @@ void rightMovment(void) {
     TPM0->CONTROLS[3].CnV=600;
 }
 void stopMovement(void) {
-	TPM2->CONTROLS[0].CnV=1200;
-	TPM0->CONTROLS[3].CnV=1200;
+	TPM2->CONTROLS[0].CnV=1440;
+	TPM0->CONTROLS[3].CnV=1440;
 }
 void vApplicationIdleHook(void) {
 	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
@@ -112,24 +118,38 @@ void vTaskConverter(void *pv){
     SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
 
 
-    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[22] |= PORT_PCR_MUX(0);
-    PORTE->PCR[30] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[30] |= PORT_PCR_MUX(0);
+    PORTE->PCR[29] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[29] |= PORT_PCR_MUX(0);
+
+    PORTE->PCR[23] &= ~PORT_PCR_MUX_MASK;
+    PORTE->PCR[23] |= PORT_PCR_MUX(0);
 
     ADC0->SC2 = 1; // select correct voltage reference
     ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    ADC0->CFG2 = ADC_CFG2_MUXSEL(0);
 
     NVIC_EnableIRQ(ADC0_IRQn);
-
     __enable_irq();
 
     while(1){
-	    ADC0->SC1[0] = ADC_SC1_AIEN_MASK | ADC_SC1_ADCH(0b11); // enable ADC interrupt and request conversion on specified channel
+    	double dataChanel1[5];
+    	double dataChanel2[5];
+
+    	for(int i = 0; i < 5; i++) {
+    	    ADC0->SC2 = 1; // select correct voltage reference
+    	    ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    	    ADC0->CFG2 = ADC_CFG2_MUXSEL(0);
+
+    		ADC0->SC1[0] = ADC_SC1_AIEN_MASK | ADC_SC1_ADCH(0b11); // enable ADC interrupt and request conversion on specified channel
+
+        	int intdata1 = (ADC0->R[0] * 3123)/65536;
+
+
+
+    	}
     	//Takes the semaphore
     	xSemaphoreTake(SemSensorReader, portMAX_DELAY);
 
-    	int VoADC = (ADC0->R[0] * 3123)/65536;
 
     	char txt1[5];
     	snprintf(txt1, 5, "%4d", VoADC);

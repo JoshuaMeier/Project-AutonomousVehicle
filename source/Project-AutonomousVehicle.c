@@ -15,12 +15,14 @@
 #include "task.h"		// RTOS task header file
 #include "semphr.h"		// RTOS semaphore header file
 #include "fsl_slcd.h" 	// LCD header file
+#include "math.h"
 
 
 /* TODO: insert other definitions and declarations here. */
 void Print2LCD();
 SemaphoreHandle_t SemSensorReader;
 SemaphoreHandle_t semMotors;
+SemaphoreHandle_t semMutx;
 
 int CnV0 = 1400;
 int CnV1 = 2000;
@@ -28,11 +30,14 @@ int CnV1 = 2000;
 double sensor1Input = 0.0;
 double sensor2Input = 0.0;
 
-
+void vMovement(void *pv);
+void vApplicationIdleHook(void);
+void vTaskConverter(void *pv);
 void stopMovement(void);
 void rightMovment(void);
 void leftMovment(void);
 void forwardMovment(void);
+void ADC0_IRQHandler(void);
 
 
 /* This task initializes the TPM as well as calls the functions for the different movement styles
@@ -42,7 +47,7 @@ void forwardMovment(void);
  * */
 void vMovement(void*pv) {
 
-	//xSemaphoreTake(semMotors, portMAX_DELAY);
+
 
     SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
     SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK | SIM_SCGC6_TPM0_MASK;
@@ -68,8 +73,9 @@ void vMovement(void*pv) {
 
 
     while(1) {
-		/* sensor1 is blocked within a certain voltage */
-		if(getVotlage() < 1000.0) {
+
+    	/* sensor1 is blocked within a certain voltage */
+		if(sensor1Input > 1900.0) {
 			stopMovement();
 	    	/* sensor1 and sensor2 are within a certain voltage */
 	    	if(0) {
@@ -84,13 +90,14 @@ void vMovement(void*pv) {
 			// move forward
 			forwardMovment();
 		}
+		vTaskDelay( pdMS_TO_TICKS(500) );
     	taskYIELD();
     }
 }
 
 void forwardMovment(void) {
-    TPM2->CONTROLS[0].CnV=1200;
-    TPM0->CONTROLS[3].CnV=1900;
+    TPM2->CONTROLS[0].CnV=1900;
+    TPM0->CONTROLS[3].CnV=1300;
 }
 
 void leftMovment(void) {
@@ -103,8 +110,8 @@ void rightMovment(void) {
     TPM0->CONTROLS[3].CnV=600;
 }
 void stopMovement(void) {
-	TPM2->CONTROLS[0].CnV=1440;
-	TPM0->CONTROLS[3].CnV=1440;
+	TPM2->CONTROLS[0].CnV=1475;
+	TPM0->CONTROLS[3].CnV=1450;
 }
 void vApplicationIdleHook(void) {
 	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
@@ -116,7 +123,6 @@ void vApplicationIdleHook(void) {
 void vTaskConverter(void *pv){
 	SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
     SIM->SCGC6 |= SIM_SCGC6_ADC0_MASK;
-
 
     PORTE->PCR[29] &= ~PORT_PCR_MUX_MASK;
     PORTE->PCR[29] |= PORT_PCR_MUX(0);
@@ -132,42 +138,39 @@ void vTaskConverter(void *pv){
     __enable_irq();
 
     while(1){
+    	//Takes the semaphore
     	double dataChanel1[5];
     	double dataChanel2[5];
 
     	for(int i=0; i<5; i++){
+    		//Sensor #1 initialization
+    		ADC0->SC2 = 1; // select correct voltage reference
+    		ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    		ADC0->CFG2= ADC_CFG2_MUXSEL(0);
 
-    	    			//Sensor #1 initialization
-    	    			ADC0->SC2 = 1; // select correct voltage reference
-    	    			ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
-    	    			ADC0->CFG2= ADC_CFG2_MUXSEL(0);
+    		//Sensor #1
+    		ADC0->SC1[0] = ADC_SC1_ADCH(0b111); // conversion on specified channel
+    		dataChanel1[i] = (double) (ADC0->R[0] * 3123.0)/65536.0;
 
-    	    			//Sensor #1
-    	    		    ADC0->SC1[0] = ADC_SC1_ADCH(0b111); // conversion on specified channel
+    		//PRINTF("chanel1 = %f\n", dataChanel1[i]);
 
-    	    		    int data1 = (ADC0->R[0] * 3123)/65536;
+    		//Sensor #2 initialization
+    		ADC0->SC2 = 1; // select correct voltage reference
+    		ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
+    		ADC0->CFG2= ADC_CFG2_MUXSEL(1);
 
-    	    		    PRINTF("V1 = %d\n",data1);
+    		//Sensor #2
+    		ADC0->SC1[0] = ADC_SC1_ADCH(0b100);
+    		dataChanel2[i] = (double) (ADC0->R[0] * 3123.0)/65536.0;
 
-    	    		    dataChanel1[i] =(ADC0->R[0] * 3123)/65536;
+    		//PRINTF("chanel2 = %f\n", dataChanel1[i]);
+    	}
 
+    	sensor1Input = (dataChanel1[1] + dataChanel1[2] + dataChanel1[3] + dataChanel1[4] + dataChanel1[5]) / 5.0;
+    	sensor2Input = (dataChanel2[1] + dataChanel2[2] + dataChanel2[3] + dataChanel2[4] + dataChanel2[5]) / 5.0;
 
-    	    		    //Sensor #2 initialization
-
-    	    		    ADC0->SC2 = 1; // select correct voltage reference
-    	    		    ADC0->CFG1 = ADC_CFG1_MODE(3); // 16-bit conversions
-    	    		    ADC0->CFG2= ADC_CFG2_MUXSEL(1);
-
-    	    		    //Sensor #2
-    	    		    ADC0->SC1[0] = ADC_SC1_ADCH(0b100);
-
-    	    		    dataChanel2[i] =(ADC0->R[0] * 3123)/65536;
-
-
-    	    			}
-    	//Takes the semaphore
-    	xSemaphoreTake(SemSensorReader, portMAX_DELAY);
-
+    	//PRINTF("chanel1 average = %f\n", sensor1Input);
+    	//PRINTF("chanel2 average = %f\n", sensor2Input);
 
     	vTaskDelay( pdMS_TO_TICKS(200) );
     }
@@ -192,6 +195,8 @@ int main(void) {
 
     SemSensorReader = xSemaphoreCreateBinary();
     semMotors = xSemaphoreCreateBinary();
+
+    //semMutx = xSemaphoreCreateMutex();
     __enable_irq();
   
     xTaskCreate(vTaskConverter, "Task Converter", 300,0,0,NULL);

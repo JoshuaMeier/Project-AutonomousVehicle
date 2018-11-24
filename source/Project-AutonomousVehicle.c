@@ -19,10 +19,16 @@
 
 
 /* TODO: insert other definitions and declarations here. */
+int readMag(int *x, int *y, int *z); // writes to x, y, z the magnetometer data
 void Print2LCD();
+
+uint16_t period = 8000;
+
+SemaphoreHandle_t semMag;
 SemaphoreHandle_t SemSensorReader;
 SemaphoreHandle_t semMotors;
 SemaphoreHandle_t semMutx;
+SemaphoreHandle_t mtx;
 
 int CnV0 = 1400;
 int CnV1 = 2000;
@@ -30,6 +36,16 @@ int CnV1 = 2000;
 double sensor1Input = 0.0;
 double sensor2Input = 0.0;
 
+int xm=0;
+int ym=0;
+int zm=0;
+
+int offsetX = (-2312-2473)/2;
+int offsetY = (1885+1626)/2;
+int offsetZ = (-2640-2095)/2;
+
+void vTaskComData(void *pv);
+void vTaskMagnetometer(void *pv);
 void vMovement(void *pv);
 void vApplicationIdleHook(void);
 void vTaskConverter(void *pv);
@@ -38,7 +54,48 @@ void rightMovment(void);
 void leftMovment(void);
 void forwardMovment(void);
 void ADC0_IRQHandler(void);
+void TPM0_IRQHandler(void);
 
+
+void vTaskComData(void *pv){
+	SIM->SCGC6 |= SIM_SCGC6_TPM1_MASK;// enable TPM0 and DMAMUX
+
+	MCG->C1 |= MCG_C1_IRCLKEN_MASK; // enable the MCGIRCLK clock (it has 2 or 8 MHz)
+	SIM->SOPT2 &= SIM_SOPT2_TPMSRC_MASK;
+	SIM->SOPT2 |= SIM_SOPT2_TPMSRC(0b11); // set MCGIRCLK as the TPM clock source
+
+	TPM1->MOD = period; // the timer counter will count from 0 to CNTMAX
+
+	// DMA transfers will be requested when the timer counter reaches CNTMAX:
+	TPM1->SC = TPM_SC_CMOD(1) | TPM_SC_TOIE_MASK | TPM_SC_PS(5) | TPM_STATUS_CH1F(2);
+
+	NVIC_EnableIRQ(TPM0_IRQn);
+	//NVIC_SetPriority(TPM0_IRQn,2);
+	__enable_irq();
+
+
+	while(1) {
+		int xc = xm - offsetX;
+		int zc = zm - offsetZ;
+		int yc = ym - offsetY;
+		taskYIELD();
+	}
+}
+
+
+void vTaskMagnetometer(void *pv){
+	while(1){
+		//Takes the semaphore
+		xSemaphoreTake(semMag, portMAX_DELAY);
+		//Takes the semaphore
+	//	xSemaphoreTake(mtx, portMAX_DELAY);
+		//reads the magnetometer
+		readMag(&xm, &ym, &zm);
+		//Gives the semaphore back
+	//	xSemaphoreGive(mtx);
+		taskYIELD();
+	}
+}
 
 /* This task initializes the TPM as well as calls the functions for the different movement styles
  * forwardMovement = move the left motors counter clockwise and the right motor clockwise at the same rate.
@@ -46,8 +103,6 @@ void ADC0_IRQHandler(void);
  * rightMovement = move the 2 motors counter clockwise at the same rate
  * */
 void vMovement(void*pv) {
-
-
 
     SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
     SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK | SIM_SCGC6_TPM0_MASK;
@@ -75,14 +130,14 @@ void vMovement(void*pv) {
     while(1) {
 
     	/* sensor1 is blocked within a certain voltage */
-		if(sensor1Input > 1900.0) {
-			stopMovement();
+		if(sensor1Input > 1700.0) {
+			//stopMovement();
 	    	/* sensor1 and sensor2 are within a certain voltage */
-	    	if(0) {
+	    	if(sensor2Input > 1300.0) {
 	    		// turn left
 	    		leftMovment();
 	    	/* sensor1 is within a certain voltage and sensor2 is not */
-	    	} else if(0) {
+	    	} else if( sensor2Input < 1300.0) {
 	    		// turn right
 	    		rightMovment();
 	    	}
@@ -101,13 +156,17 @@ void forwardMovment(void) {
 }
 
 void leftMovment(void) {
-    TPM2->CONTROLS[0].CnV=1400;
-    TPM0->CONTROLS[3].CnV=1400;
+	while( 1 /* change to reading the Magnetometer */) {
+	    TPM2->CONTROLS[0].CnV=1900;
+	    TPM0->CONTROLS[3].CnV=1900;
+	}
 }
 
 void rightMovment(void) {
-    TPM2->CONTROLS[0].CnV=600;
-    TPM0->CONTROLS[3].CnV=600;
+	while( 1 /*offsetX > -2000*/) {
+	    TPM2->CONTROLS[0].CnV=1300;
+	    TPM0->CONTROLS[3].CnV=1300;
+	}
 }
 void stopMovement(void) {
 	TPM2->CONTROLS[0].CnV=1475;
@@ -184,6 +243,13 @@ void ADC0_IRQHandler(void){
 	portYIELD_FROM_ISR(woken);
 }
 
+void TPM0_IRQHandler(void){
+	TPM1->SC |= TPM_SC_TOF_MASK;
+	BaseType_t woken = pdFALSE;
+	xSemaphoreGiveFromISR(semMag,0);
+	portYIELD_FROM_ISR(woken);
+}
+
 
 int main(void) {
   	/* Init board hardware. */
@@ -194,13 +260,17 @@ int main(void) {
     BOARD_InitDebugConsole();
 
     SemSensorReader = xSemaphoreCreateBinary();
+    semMag = xSemaphoreCreateBinary();
     semMotors = xSemaphoreCreateBinary();
 
     //semMutx = xSemaphoreCreateMutex();
+    mtx = xSemaphoreCreateMutex();
     __enable_irq();
   
-    xTaskCreate(vTaskConverter, "Task Converter", 300,0,0,NULL);
-    xTaskCreate(vMovement, "Move Forward", 300, 0, 0, NULL);
+    xTaskCreate(vTaskMagnetometer, "TASK Magnetometer", 300,0,0,NULL);
+    xTaskCreate(vTaskComData, "TASK Computing Data", 300,1,0,NULL);
+    xTaskCreate(vTaskConverter, "Task Converter", 300,1,0,NULL);
+    xTaskCreate(vMovement, "Move Forward", 300, 1, 0, NULL);
     vTaskStartScheduler();
 
     /* Enter an infinite loop, just incrementing a counter. */  

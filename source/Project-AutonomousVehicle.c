@@ -51,6 +51,7 @@ void rightMovment(void);
 void leftMovment(void);
 void forwardMovment(void);
 void ADC0_IRQHandler(void);
+void choicestwomake(void);
 
 /* This task initializes the TPM as well as calls the functions for the different movement styles
  * forwardMovement = move the left motors counter clockwise and the right motor clockwise at the same rate.
@@ -88,44 +89,50 @@ void vMovement(void*pv) {
 		//
     	//xSemaphoreTake(semMotors, portMAX_DELAY);
     	/* sensor1 is blocked within a certain voltage */
-		if(sensor1Input < 1/1700.0) {
-			//stopMovement();
-	    	/* sensor1 and sensor2 are within a certain voltage */
-	    	if(sensor2Input < 1/900.0) {
-	    		// turn left
-	    		leftMovment();
-
-	    	/* sensor1 is within a certain voltage and sensor2 is not */
-	    	} else /*if(sensor2Input < 200.0)*/ {
-	    		// turn right
-	    		rightMovment();
-	    	}
-		} else {
+		if(sensor1Input > 1/1300.0) {
 			// move forward
 			forwardMovment();
+		} else {
+			choicestwomake();
 		}
-		vTaskDelay( pdMS_TO_TICKS(500) );
+		vTaskDelay( pdMS_TO_TICKS(300) );
 		//xSemaphoreGive(semMotors);
     	taskYIELD();
     }
+}
+
+void choicestwomake(void) {
+	//stopMovement();
+	/* sensor1 and sensor2 are within a certain voltage */
+	if(sensor2Input > 1/900.0) {
+   		// turn right
+		rightMovment();
+	/* sensor1 is within a certain voltage and sensor2 is not */
+	} else if(sensor2Input < 1/900.0) /*if(sensor2Input < 200.0)*/ {
+   		// turn left
+		leftMovment();
+	}
 }
 
 void forwardMovment(void) {
 
 	(TPM2->CONTROLS[0].CnV) = 1000;
 	(TPM0->CONTROLS[3].CnV) = 1600;
+
 }
 
 void leftMovment(void) {
 
 	(TPM2->CONTROLS[0].CnV) = 1900;
 	(TPM0->CONTROLS[3].CnV) = 1900;
+	vTaskDelay( pdMS_TO_TICKS(465) );
 }
 
 void rightMovment(void) {
 
 	(TPM2->CONTROLS[0].CnV) = 1100;
 	(TPM0->CONTROLS[3].CnV) = 1100;
+	vTaskDelay( pdMS_TO_TICKS(485) );
 }
 
 

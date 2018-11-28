@@ -16,10 +16,12 @@
 #include "semphr.h"		// RTOS semaphore header file
 #include "fsl_slcd.h" 	// LCD header file
 #include "math.h"
+/*
 
-#define motor1 TPM2->CONTROLS[0].CnV
-#define motor1 TPM0->CONTROLS[3].CnV
+#define (TPM2->CONTROLS[0].CnV) (TPM2->CONTROLS[0].CnV)
+#define (TPM0->CONTROLS[3].CnV) (TPM0->CONTROLS[3].CnV)
 
+*/
 
 /* TODO: insert other definitions and declarations here. */
 void Print2LCD();
@@ -30,11 +32,16 @@ SemaphoreHandle_t semMotors;
 SemaphoreHandle_t semMutx;
 SemaphoreHandle_t mtx;
 
-int CnV0 = 1400;
-int CnV1 = 2000;
+int CnV0 = 1300;
+int CnV1 = 1900;
+int delay = 100;
+
 
 double sensor1Input = 0.0;
 double sensor2Input = 0.0;
+double prevousSensorVal = 0.0;
+
+uint8_t counter = 0;
 
 void vMovement(void *pv);
 void vApplicationIdleHook(void);
@@ -52,14 +59,14 @@ void ADC0_IRQHandler(void);
  * */
 void vMovement(void*pv) {
 
-    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;
+    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK | SIM_SCGC5_PORTB_MASK;
     SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK | SIM_SCGC6_TPM0_MASK;
 
     PORTE->PCR[30] &= ~PORT_PCR_MUX_MASK;
     PORTE->PCR[30] |= PORT_PCR_MUX(3);
 
-    PORTE->PCR[22] &= ~PORT_PCR_MUX_MASK;
-    PORTE->PCR[22] |= PORT_PCR_MUX(3);
+    PORTB->PCR[2] &= ~PORT_PCR_MUX_MASK;
+    PORTB->PCR[2] |= PORT_PCR_MUX(3);
 
     SIM->SOPT2 &= SIM_SOPT2_TPMSRC_MASK;
     // Options: 00 Clock disabled; 01 IRC48M; 10 OSCERCLK; 11 MCGIRCLK
@@ -75,17 +82,21 @@ void vMovement(void*pv) {
     TPM0->CONTROLS[3].CnSC= TPM_CnSC_MSB_MASK | TPM_CnSC_ELSB_MASK;
 
 
+    prevousSensorVal = sensor2Input;
+    forwardMovment();
     while(1) {
-
+		//
+    	//xSemaphoreTake(semMotors, portMAX_DELAY);
     	/* sensor1 is blocked within a certain voltage */
-		if(sensor1Input > 1000.0) {
+		if(sensor1Input < 1/1700.0) {
 			//stopMovement();
 	    	/* sensor1 and sensor2 are within a certain voltage */
-	    	if(sensor2Input > 450.0) {
+	    	if(sensor2Input < 1/900.0) {
 	    		// turn left
 	    		leftMovment();
+
 	    	/* sensor1 is within a certain voltage and sensor2 is not */
-	    	} else if( sensor2Input < 450.0) {
+	    	} else /*if(sensor2Input < 200.0)*/ {
 	    		// turn right
 	    		rightMovment();
 	    	}
@@ -94,29 +105,30 @@ void vMovement(void*pv) {
 			forwardMovment();
 		}
 		vTaskDelay( pdMS_TO_TICKS(500) );
+		//xSemaphoreGive(semMotors);
     	taskYIELD();
     }
 }
 
 void forwardMovment(void) {
-    TPM2->CONTROLS[0].CnV=1300;
-    TPM0->CONTROLS[3].CnV=1900;
+
+	(TPM2->CONTROLS[0].CnV) = 1000;
+	(TPM0->CONTROLS[3].CnV) = 1600;
 }
 
 void leftMovment(void) {
-	    TPM2->CONTROLS[0].CnV=1900;
-	    TPM0->CONTROLS[3].CnV=1900;
 
+	(TPM2->CONTROLS[0].CnV) = 1900;
+	(TPM0->CONTROLS[3].CnV) = 1900;
 }
 
 void rightMovment(void) {
-	    TPM2->CONTROLS[0].CnV=1300;
-	    TPM0->CONTROLS[3].CnV=1300;
+
+	(TPM2->CONTROLS[0].CnV) = 1100;
+	(TPM0->CONTROLS[3].CnV) = 1100;
 }
-void stopMovement(void) {
-	TPM2->CONTROLS[0].CnV=1475;
-	TPM0->CONTROLS[3].CnV=1450;
-}
+
+
 void vApplicationIdleHook(void) {
 	__asm volatile ("wfe"); // wait for interrupt; CPU waits in low power mode
 }
@@ -155,7 +167,7 @@ void vTaskConverter(void *pv){
     		//Sensor #1
     		ADC0->SC1[0] = ADC_SC1_ADCH(0b111); // conversion on specified channel
     		dataChanel1[i] = (double) (ADC0->R[0] * 3123.0)/65536.0;
-
+    		//sensor1Input = (double) (ADC0->R[0] * 3123.0)/65536.0;
     		//PRINTF("chanel1 = %f\n", dataChanel1[i]);
 
     		//Sensor #2 initialization
@@ -166,12 +178,12 @@ void vTaskConverter(void *pv){
     		//Sensor #2
     		ADC0->SC1[0] = ADC_SC1_ADCH(0b100);
     		dataChanel2[i] = (double) (ADC0->R[0] * 3123.0)/65536.0;
-
+    		//sensor2Input = (double) (ADC0->R[0] * 3123.0)/65536.0;
     		//PRINTF("chanel2 = %f\n", dataChanel1[i]);
     	}
 
-    	sensor1Input = (dataChanel1[1] + dataChanel1[2] + dataChanel1[3] + dataChanel1[4] + dataChanel1[5]) / 5.0;
-    	sensor2Input = (dataChanel2[1] + dataChanel2[2] + dataChanel2[3] + dataChanel2[4] + dataChanel2[5]) / 5.0;
+    	sensor1Input = 5.0 / (dataChanel1[1] + dataChanel1[2] + dataChanel1[3] + dataChanel1[4] + dataChanel1[5]);
+    	sensor2Input = 5.0 / (dataChanel2[1] + dataChanel2[2] + dataChanel2[3] + dataChanel2[4] + dataChanel2[5]);
 
     	//PRINTF("chanel1 average = %f\n", sensor1Input);
     	//PRINTF("chanel2 average = %f\n", sensor2Input);
